@@ -1,0 +1,179 @@
+\documentclass[a4paper]{article} %% Classe do documento
+\usepackage[margin=2cm]{geometry} %% Dimensões das margens
+\usepackage[brazil]{babel} %% Idioma
+\usepackage[utf8x]{inputenc} %% Codificação de caracteres
+\usepackage{amsmath} %% Símbolos/expressões/ambientes matemáticos
+\usepackage{graphicx} %% Inserir figuras em qualquer extensão
+\usepackage[svgnames]{xcolor} %% Usar cores pelo nome
+\usepackage{float}
+
+%% Definições
+\title{Trab}
+\author{DTJ}
+\date{}
+
+%% chunk de configuração do knitr para a sessão
+<<setup, include=FALSE, cache=FALSE,warnings=FALSE>>=
+opts_chunk$set(tidy=FALSE, size="small", cache=TRUE, fig.align="center")
+load("../ibov.RData")
+require(lattice)
+require(xtable)
+require(quantmod)
+@
+
+\begin{document}
+
+\section{Referencial Teórico}
+
+\subsection{Índice Bovespa - IBOVESPA}
+
+A bolsa de valores de São Paulo concentra o fluxo de negociações de açoes de muitas das maiores empresas situadas no Brasil, e ela administra o sistema financeiro de venda, compra, aluguel e etc. de ações. Este estudo tem como foco as empresas que compõe o Índice Bovespa, cujo objetivo é ser o indicador do desempenho médio das cotações dos ativos de maior negociabilidade e representatividade do mercado de ações brasileiro.
+
+\subsection{Médias Móveis}
+
+Este estudo utiliza dois tipos de médias móveis:
+
+\begin{itemize}
+\item Média Móvel Aritmética
+Um vetor de médias é criado, em que cada valor é calculado conforme a seguinte equação:
+
+$$ M_{t} = \frac{Z_{t} + Z_{t-1} + ... Z_{t-r+1}}{r} $$
+
+$M_{t}$ = valor do vetor na posição t;
+
+$Z_{x}$ = valor observado na posição x;
+
+r = Número de períodos (parâmetro).
+
+\item Média Móvel Exponencial
+Para este vetor, os valores são calculados seguindo esta equação:
+
+$$ S_{t} = \alpha Z_{t} + (1- \alpha ) Z_{t-1} $$
+
+$S_{t}$ = valor do vetor na posição t;
+
+$Z_{x}$ = valor observado na posição x;
+
+$ \alpha $ = Peso da observação atual.
+
+\end{itemize}
+
+\section{Desenvolvimento}
+
+\subsection{Açoes escolhidas para Análise}
+
+As ações escolhidas são aquelas que compõe o índice IBOVESPA (data:20/06/2014), pois estas seriam as que melhor representam o mercado de açoes brasileiro de uma forma geral, esta lista pode ser encontrada no site da bmfbovespa (BMFB). Utilizamos funções do R para ler os campos dos códigos das açoes, que em seguida são usados para extrair os dados históricos por meio da função {\textit{getSymbols}} do pacote {\textit{quantmod}}. Estas informações são salvas numa lista (chamada {\textit{ibov}}) para uso posterior. Os códigos utilizados para esta etapa estão descritos a seguir:
+
+<<leitura, echo=TRUE, eval=FALSE>>=
+lines <- readLines("http://www.bmfbovespa.com.br/indices/ResumoCarteiraTeorica.aspx?Indice=Ibovespa&idioma=pt-br") #leitura do site do indice
+l <- grep("lblCodigo.*>(.{5})<.*$",lines)
+lines <- lines[l]
+nomes <- gsub("^.*>(.*)<.*$","\\1",lines)
+nomes <- paste(nomes,".SA", sep="") #codigos das acoes do indice
+getSymbols(nomes, from="2013-01-01") #dados das funcoes do ibovespa
+ibov <- mget(nomes, envir = globalenv()) # criando lista com as acoes
+@
+
+\subsection{Picos da Função Resultado}
+
+Em posse dos dados necessários, o passo seguinte é encontrar os parâmetros que maximizam o ganho médio entre todas as ações. Para isto foram construídas duas funções. A primeira tem como entrada uma ação e um par de parâmetros para as médias aritmética e exponencial, esta função calcula dois vetores, um de médias aritméticas e outro das médias exponenciais. Em seguida a função verifica quando estes vetores se cruzam, ou seja, quando um vetor com valores menores que o outro passa a ser maior, e vice-versa. A função então verifica se o ponto foi de compra ou venda e finaliza calculando as diferenças em percentual entre vendas e compras e retorna a soma dos resultados financeiros obtidos pelo par de parâmetros na ação. Esta função é apresentada a seguir:
+
+<<funcao1, echo=TRUE, eval=FALSE>>=
+resultado.acao <- function(x, na, ne){
+    da <- as.data.frame(x)
+    da <- da[,4]
+    dama <- SMA(da, n=na) #media aritmetica
+    dame <- WMA(da, n=ne, wts=1:ne) #media exponencial
+    da <- data.frame(fe=da, ma=dama, me=dame)
+    dif <- as.numeric(da$me - da$ma)
+    dif <- sign(dif) # sinal da diferenca
+    dif <- dif-c(dif[1],dif[-length(dif)]) # encontrar pontos de cruzamento
+    i <- max(na, ne)+1
+    compra <- "zero"
+    result <- 0
+    while(i<nrow(da)){
+        if(dif[i] == 2){compra <- da$fe[i+1]}
+        if(dif[i] == -2){
+            if(compra!="zero"){
+                venda <- da$fe[i+1]
+                result <- result + ((venda - compra)/venda)
+                compra <- "zero"
+            }
+        }
+        i <- i+1
+    }
+    return(result)
+}
+@
+
+A segunda função mencionada aplica esta primeira função a uma lista de dados, retornando a soma das somas, o objetivo é aplicar a primeira função em todas as ações do índice IBOVESPA com um par de parâmetros e obter o resultado geral em percentual, que é a soma de todos os resultados das ações. esta ação consta a seguir:
+
+<<funcao2, echo=TRUE, eval=FALSE>>=
+resultado.conjunto <- function(lista, na, ne){
+    somas <- data.frame(acao=0, resultado=0)
+    for(i in 1:length(lista)){
+        r <- resultado.acao(lista[[i]], na=na, ne=ne)
+        somas <- rbind(somas, c(i,r))
+    }
+    return(sum(somas$resultado))
+}
+@
+
+Para analisar resultados para diversos pares de parâmetros, aplicaremos a função {\textit{resultado.conjunto}} à lista {\textit{ibov}} num conjunto abrangente de parâmetros, que compreende vetores de médias móveis de parâmetros 2 até 100 e vetores de médias exponenciais de e até 175, utilizamos o seguinte script:
+
+<<funcao3, echo=TRUE, eval=FALSE>>=
+tab <- expand.grid(na=2:100, ne=2:175, res=0)
+for(i in 1:nrow(tab)){
+    tab$res[i] <- resultado.conjunto(lista=ibov, na=tab$na[i], ne=tab$ne[i])}
+@
+
+\subsection{Análise da Superfície}
+
+A partir dos cálculos finais anteriores, podemos analisar a seguinte superfície:
+
+<<superficie, echo=FALSE, out.width="0.9\\textwidth", fig.pos="H">>=
+wireframe(res ~ na*ne, data = ta,
+  xlab = "na", ylab = "ne",
+  main = "",
+  drape = TRUE,
+  colorkey = TRUE
+)
+@
+
+Os melhores resultados são apresentados na tabela a seguir:
+
+<<tabtop, echo=FALSE, results="asis">>=
+tabela1<-ta[order(ta$res, decreasing=TRUE)[1:4],]
+tabela2<-xtable(tabela1)
+print(tabela2, include.rownames=FALSE, table.placement="H")
+@
+
+\subsection{Aplicações dos Melhores Parâmetros}
+
+A seguir podemos observar a aplicação do melhor par de parâmetros em algumas ações:
+
+<<petr, echo=FALSE, out.width="0.65\\textwidth", fig.pos="H">>=
+na <- 42
+ne <- 108
+da <- PETR4.SA
+da$ma <- SMA(da[,4], n=na) #media aritmetica
+da$me <- WMA(da[,4], n=ne, wts=1:ne) #media exponencial
+plot(da[,4], type="l", main="Petrobrás")
+lines(da$ma,col="green")
+lines(da$me,col="red")
+legend("bottomleft", legend=c("Aritmética","Exponencial"), fill=c("green","red"))
+@
+
+<<vale, echo=FALSE, out.width="0.65\\textwidth", fig.pos="H">>=
+na <- 42
+ne <- 108
+da <- VALE3.SA
+da$ma <- SMA(da[,4], n=na) #media aritmetica
+da$me <- WMA(da[,4], n=ne, wts=1:ne) #media exponencial
+plot(da[,4], type="l", main="Vale")
+lines(da$ma,col="green")
+lines(da$me,col="red")
+legend("bottomleft", legend=c("Aritmética","Exponencial"), fill=c("green","red"))
+@
+
+\end{document}
