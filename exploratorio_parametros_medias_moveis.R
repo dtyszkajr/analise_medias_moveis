@@ -20,7 +20,7 @@ load("data-ibov-20180320.RData")
 resultado.acao <- function(x, na, ne){
   da <- as.data.frame(x)
   da <- da[,4]
-  da <- da[(length(da)-DIAS_CORTE):length(da)]
+  da <- da[max(0,(length(da)-DIAS_CORTE)):length(da)]
   dama <- SMA(da, n=na) #media aritmetica
   dame <- WMA(da, n=ne, wts=1:ne) #media exponencial
   da <- data.frame(fe=da, ma=dama, me=dame)
@@ -35,7 +35,7 @@ resultado.acao <- function(x, na, ne){
     if(dif[i] == -2){
       if(compra!="zero"){
         venda <- da$fe[i+1]
-        result <- result + ((venda - compra)/venda)
+        result <- result + ((venda - compra)/compra)
         compra <- "zero"
       }
     }
@@ -61,7 +61,7 @@ DIAS_CORTE = 180
 
 # load("data-grid_geral_results.RData")
 
-tab_grid <- expand.grid(na=3:120, ne=3:120, res=0)
+tab_grid <- expand.grid(na=3:60, ne=3:60, res=0)
 for(i in 1:nrow(tab_grid)){
   tab_grid$res[i] <- resultado.conjunto(lista=ibov, na=tab_grid$na[i], ne=tab_grid$ne[i])}
 
